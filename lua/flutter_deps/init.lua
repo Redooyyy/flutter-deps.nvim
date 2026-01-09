@@ -1,9 +1,7 @@
 local M = {}
 
--- Default config
 local config = {
-  keymap = '<leader>pd', -- default keymap
-  use_telescope = true, -- use Telescope picker
+  keymap = '<leader>pd',
 }
 
 function M.setup(user_config)
@@ -14,14 +12,13 @@ function M.setup(user_config)
   end
 end
 
--- Add dependency workflow
 function M.add_dependency()
   local finder = require('flutter_deps.finder')
   local writer = require('flutter_deps.writer')
 
   local has_telescope, telescope = pcall(require, 'telescope')
   if not has_telescope then
-    print('Telescope.nvim is required for this plugin')
+    print('Telescope.nvim is required')
     return
   end
 
@@ -31,16 +28,12 @@ function M.add_dependency()
   local actions = require('telescope.actions')
   local action_state = require('telescope.actions.state')
 
-  -- Open Telescope directly with a dynamic finder
   pickers
     .new({}, {
       prompt_title = 'Search pub.dev packages',
       finder = finders.new_dynamic({
-        fn = function(input)
-          if input == '' then
-            return {}
-          end
-          return finder.search(input) -- search pub.dev dynamically as user types
+        fn = function(input, cb)
+          finder.debounced_search(input, cb)
         end,
         entry_maker = function(entry)
           return {
@@ -65,5 +58,4 @@ function M.add_dependency()
 end
 
 M.config = config
-
 return M
