@@ -1,95 +1,158 @@
-# FloatBar.nvim
+# flutter-deps.nvim
 
-A modern, **toggleable floating terminal** for Neovim with **persistent buffers**, **theme support**, and **transparent windows**.  
-Perfect for users of **Kitty**, **Alacritty**, or any true-color terminal.
+A Neovim plugin to **quickly search and add Flutter dependencies** from [pub.dev](https://pub.dev) directly into your `pubspec.yaml` using Telescope-style fuzzy selection.
+
+No more manual copy-pasting — just type, select, and add dependencies instantly.
 
 ---
 
 ## Features
 
-- Toggleable floating terminal with `<space>tt`
-- Persistent buffer after closing
-- Transparent and theme-aware (supports TokyoNight and other true-color themes)
-- Semi-transparent (`winblend`) adjustable
-- Customizable width, height, and border
-- Works in **terminal mode** as well
-- Send commands programmatically with `require("floatbar").send("command")`
+- Search for any Flutter/Dart dependency from pub.dev.
+- Fuzzy search using Telescope.
+- Automatically adds the selected dependency to your `pubspec.yaml`.
+- Optional floating window interface for smooth selection.
+- Works asynchronously — non-blocking while typing.
+
+---
+
+[//]: # (## Screenshot)
+
+[//]: # ()
+[//]: # (_&#40;You can add your screenshot here&#41;_)
+
+[//]: # ()
+[//]: # (+--------------------------------+)
+
+[//]: # (flutter_deps.nvim)
+
+[//]: # (Type dependency name:)
+
+[//]: # ([ provider ])
+
+[//]: # ()
+[//]: # (---)
+
+[//]: # ()
+[//]: # (Select version:)
+
+[//]: # ([ ^6.0.5 ])
+
+[//]: # (+--------------------------------+)
 
 ---
 
 ## Installation
 
-### Using Lazy.nvim
-
-```lua
-{
-  "Redooyyy/floatbar-nvim",
-  config = function()
-    require("floatbar").setup({
-      width = 0.8,      -- Floating window width (percentage)
-      height = 0.8,     -- Floating window height (percentage)
-      winblend = 20,    -- Transparency (0-100)
-      border = "rounded" -- Window border style
-    })
-  end,
-}
-```
-
-### Using Packer.nvim
+Using **lazy.nvim**:
 
 ```lua
 use {
-  "Redooyyy/floatbar-nvim",
+  "Redooyyy/flutter-deps.nvim",
+  requires = { "nvim-lua/plenary.nvim", "nvim-telescope/telescope.nvim" },
   config = function()
-    require("floatbar").setup({
-      width = 0.8,
-      height = 0.8,
-      winblend = 20,
-      border = "rounded",
-    })
+    require("flutter-deps").setup()
   end
 }
 ```
 
-### Usage
-
-```
-Toggle terminal: <space>tt
-```
-
-### Send command programmatically:
-
-#### require("floatbar").send("ls -la")
-
-Terminal buffer persists after closing
-
-Works in both normal and terminal mode
-
-### Configuration
+Or **with packer.nvim**:
 
 ```lua
-require("floatbar").setup({
-    width = 0.7,       -- 70% of screen width
-    height = 0.7,      -- 70% of screen height
-    winblend = 30,     -- more transparent
-    border = "double", -- other options: single, rounded, solid
+use {
+  "Redooyyy/flutter-deps.nvim",
+  requires = { "nvim-lua/plenary.nvim", "nvim-telescope/telescope.nvim" },
+  config = function()
+    require("flutter-deps").setup()
+  end
+}
+```
+
+Usage Command
+
+```
+:FlutterDeps
+```
+
+### Lua API
+
+```
+require("flutter-deps").open()  -- Opens the dependency picker
+```
+
+### Default Keymaps
+
+You can bind a shortcut in your init.lua:
+
+```lua
+-- Example: Ctrl+d to open Flutter dependency picker
+vim.keymap.set('n', '<C-d>', function()
+  require("flutter-deps").open()
+end, { noremap = true, silent = true, desc = "Open Flutter Dependency Picker" })
+```
+
+You can customize the keybinding to whatever you like.
+
+## Features Overview
+
+| Feature                  | Description                                            |
+| ------------------------ | ------------------------------------------------------ |
+| Search dependencies      | Fuzzy search dependencies on pub.dev                   |
+| Version picker           | Pick specific versions before adding                   |
+| Auto add to pubspec.yaml | Adds the dependency under `dependencies` automatically |
+| Floating window          | Optional floating UI for seamless selection            |
+| Async support            | Non-blocking; works while typing                       |
+
+## Example Workflow
+
+1. Press your configured key (<C-d> in the example).
+
+2. Type the dependency name, e.g., provider.
+
+3. Select the version from the list.
+
+4. The plugin automatically inserts it into pubspec.yaml.
+
+## Configuration
+
+You can optionally pass settings to customize the floating window:
+
+```lua
+require("flutter-deps").setup({
+  width = 0.7,         -- floating window width (0.0-1.0)
+  height = 0.7,        -- floating window height (0.0-1.0)
+  border = "rounded",  -- border style: "single", "double", "rounded", "solid", "shadow"
+  winblend = 0,        -- transparency (0-100)
 })
-
 ```
 
-### Keymaps
+### Defaults:
 
-Mode Key Action
-Normal <space>tt Toggle floating terminal
-
+```lua
+{
+  width = 0.7,
+  height = 0.7,
+  border = "rounded",
+  winblend = 0,
+}
 ```
-Terminal	<space>tt	Toggle floating terminal
-```
 
-## Notes
+## Dependencies
 
-Make sure vim.o.termguicolors = true is enabled in your config.
+    nvim-lua/plenary.nvim
 
-Transparent floating terminals work best with true-color terminals like Kitty, Alacritty, or iTerm2.
+    nvim-telescope/telescope.nvim
 
-Colors inherit your Neovim theme (tested with TokyoNight).
+## Contributing
+
+Contributions, bug reports, and suggestions are welcome!
+
+1. Fork the repository.
+
+2. Create your feature branch: `git checkout -b feature/my-feature`
+
+3. Commit your changes: `git commit -am 'Add some feature'`
+
+4. Push to the branch: `git push origin feature/my-feature`
+
+5. Open a Pull Request.
