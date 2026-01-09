@@ -9,7 +9,7 @@ function M.search(query, cb)
     return
   end
 
-  if query == '' then
+  if #query < 2 then
     cb({})
     return
   end
@@ -19,7 +19,6 @@ function M.search(query, cb)
     return
   end
 
-  -- Cancel previous job if still running
   if running_job then
     running_job:shutdown()
     running_job = nil
@@ -33,7 +32,7 @@ function M.search(query, cb)
       local ok, data = pcall(vim.fn.json_decode, body)
       local results = {}
 
-      if ok and data.packages then
+      if ok and data and data.packages then
         for _, pkg in ipairs(data.packages) do
           table.insert(results, {
             name = pkg.package,

@@ -16,14 +16,14 @@ function M.add_dependency()
   local deps_finder = require('flutter_deps.finder')
   local writer = require('flutter_deps.writer')
 
-  local has_telescope = pcall(require, 'telescope')
-  if not has_telescope then
-    print('Telescope.nvim is required')
+  local ok = pcall(require, 'telescope')
+  if not ok then
+    vim.notify('flutter-deps.nvim requires telescope.nvim', vim.log.levels.ERROR)
     return
   end
 
   local pickers = require('telescope.pickers')
-  local t_finders = require('telescope.finders')
+  local finders = require('telescope.finders')
   local conf = require('telescope.config').values
   local actions = require('telescope.actions')
   local action_state = require('telescope.actions.state')
@@ -31,7 +31,7 @@ function M.add_dependency()
   pickers
     .new({}, {
       prompt_title = 'Search pub.dev packages',
-      finder = t_finders.new_dynamic({
+      finder = finders.new_dynamic({
         fn = function(input, cb)
           deps_finder.search(input, cb)
         end,
@@ -49,7 +49,10 @@ function M.add_dependency()
           local selection = action_state.get_selected_entry().value
           actions.close(prompt_bufnr)
           writer.add_to_pubspec(selection.name, selection.latest_version)
-          print('Added ' .. selection.name .. '@' .. selection.latest_version)
+          vim.notify(
+            'Added ' .. selection.name .. '@' .. selection.latest_version,
+            vim.log.levels.INFO
+          )
         end)
         return true
       end,
