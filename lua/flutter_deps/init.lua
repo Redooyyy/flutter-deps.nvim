@@ -13,7 +13,6 @@ function M.setup(user_config)
 end
 
 function M.add_dependency()
-  local deps_finder = require('flutter_deps.finder')
   local writer = require('flutter_deps.writer')
 
   local ok = pcall(require, 'telescope')
@@ -31,29 +30,59 @@ function M.add_dependency()
   pickers
     .new({}, {
       prompt_title = 'Search pub.dev packages',
-      finder = finders.new_dynamic({
-        fn = function(input, cb)
-          deps_finder.search(input, cb)
-        end,
-        entry_maker = function(entry)
+
+      finder = finders.new_async_job({
+        command_generator = function(prompt)
+          if not prompt or #prompt < 2 then
+            return nil
+          end
+
           return {
-            value = entry,
-            display = entry.name .. ' [' .. entry.latest_version .. ']',
-            ordinal = entry.name,
+            'curl',
+            '-s',
+            'https://pub.dev/api/search?q=' .. prompt,
           }
         end,
+
+        entry_maker = function(line)
+          local ok, data = pcall(vim.fn.json_decode, line)
+          if not ok or not data.packages then
+            return nil
+          end
+
+          local entries = {}
+          for _, pkg in ipairs(data.packages) do
+            table.insert(entries, {
+              value = pkg,
+              display = pkg.package,
+              ordinal = pkg.package,
+              name = pkg.package,
+              latest_version = pkg.version or 'latest',
+            })
+          end
+
+          return entries
+        end,
       }),
+
       sorter = conf.generic_sorter({}),
+
       attach_mappings = function(prompt_bufnr)
         actions.select_default:replace(function()
-          local selection = action_state.get_selected_entry().value
+          local selection = action_state.get_selected_entry()
+          if not selection then
+            return
+          end
+
           actions.close(prompt_bufnr)
           writer.add_to_pubspec(selection.name, selection.latest_version)
+
           vim.notify(
             'Added ' .. selection.name .. '@' .. selection.latest_version,
             vim.log.levels.INFO
           )
         end)
+
         return true
       end,
     })
