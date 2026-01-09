@@ -2,23 +2,9 @@ local Job = require('plenary.job')
 local M = {}
 
 local cache = {}
-
--- debounce helper
-local function debounce(fn, delay)
-  local timer
-  return function(...)
-    local args = { ... }
-    if timer then
-      vim.fn.timer_stop(timer)
-    end
-    timer = vim.fn.timer_start(delay, function()
-      fn(unpack(args))
-    end)
-  end
-end
+local running_job = nil
 
 function M.search(query, cb)
-  -- SAFETY: if cb is missing, do nothing
   if not cb then
     return
   end
@@ -33,7 +19,13 @@ function M.search(query, cb)
     return
   end
 
-  Job:new({
+  -- Cancel previous job if still running
+  if running_job then
+    running_job:shutdown()
+    running_job = nil
+  end
+
+  running_job = Job:new({
     command = 'curl',
     args = { '-s', 'https://pub.dev/api/search?q=' .. query },
     on_exit = function(j)
@@ -56,9 +48,9 @@ function M.search(query, cb)
         cb(results)
       end)
     end,
-  }):start()
-end
+  })
 
-M.debounced_search = debounce(M.search, 250)
+  running_job:start()
+end
 
 return M
