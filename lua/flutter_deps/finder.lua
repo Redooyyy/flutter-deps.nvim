@@ -1,20 +1,15 @@
 local M = {}
 
-local https = require('ssl.https')
-local json = vim.fn.json_decode
-
 function M.search(query)
-  local url = 'https://pub.dev/api/search?q=' .. query
-  local body, code = https.request(url)
   local results = {}
-
-  if code ~= 200 or not body then
-    print('Error fetching pub.dev packages')
+  local handle = io.popen('curl -s https://pub.dev/api/search?q=' .. query)
+  if not handle then
     return results
   end
+  local body = handle:read('*a')
+  handle:close()
 
-  local data = json(body)
-
+  local data = vim.fn.json_decode(body)
   if not data.packages then
     return results
   end
@@ -25,7 +20,6 @@ function M.search(query)
       latest_version = pkg.version or 'latest',
     })
   end
-
   return results
 end
 
