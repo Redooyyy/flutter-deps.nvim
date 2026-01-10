@@ -16,73 +16,35 @@ No more manual copy-pasting — just type, select, and add dependencies instantl
 
 ---
 
-[//]: # (## Screenshot)
-
-[//]: # ()
-[//]: # (_&#40;You can add your screenshot here&#41;_)
-
-[//]: # ()
-[//]: # (+--------------------------------+)
-
-[//]: # (flutter_deps.nvim)
-
-[//]: # (Type dependency name:)
-
-[//]: # ([ provider ])
-
-[//]: # ()
-[//]: # (---)
-
-[//]: # ()
-[//]: # (Select version:)
-
-[//]: # ([ ^6.0.5 ])
-
-[//]: # (+--------------------------------+)
-
----
-
 ## Installation
 
 Using **lazy.nvim**:
 
 ```lua
-use {
+{
   "Redooyyy/flutter-deps.nvim",
-  requires = { "nvim-lua/plenary.nvim", "nvim-telescope/telescope.nvim" },
+  dependencies = { "nvim-lua/plenary.nvim", "nvim-telescope/telescope.nvim" },
   config = function()
     require("flutter-deps").setup()
   end
 }
 ```
 
-Or **with packer.nvim**:
+## Usage
 
-```lua
-use {
-  "Redooyyy/flutter-deps.nvim",
-  requires = { "nvim-lua/plenary.nvim", "nvim-telescope/telescope.nvim" },
-  config = function()
-    require("flutter-deps").setup()
-  end
-}
-```
+### Command
 
-Usage Command
-
-```
+```vim
 :FlutterDeps
 ```
 
 ### Lua API
 
-```
+```lua
 require("flutter-deps").open()  -- Opens the dependency picker
 ```
 
-### Default Keymaps
-
-You can bind a shortcut in your init.lua:
+### Keymap Example
 
 ```lua
 -- Example: Ctrl+d to open Flutter dependency picker
@@ -90,18 +52,6 @@ vim.keymap.set('n', '<C-d>', function()
   require("flutter-deps").open()
 end, { noremap = true, silent = true, desc = "Open Flutter Dependency Picker" })
 ```
-
-You can customize the keybinding to whatever you like.
-
-## Features Overview
-
-| Feature                  | Description                                            |
-| ------------------------ | ------------------------------------------------------ |
-| Search dependencies      | Fuzzy search dependencies on pub.dev                   |
-| Version picker           | Pick specific versions before adding                   |
-| Auto add to pubspec.yaml | Adds the dependency under `dependencies` automatically |
-| Floating window          | Optional floating UI for seamless selection            |
-| Async support            | Non-blocking; works while typing                       |
 
 ## Example Workflow
 
