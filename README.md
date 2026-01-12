@@ -48,7 +48,7 @@ require("flutter-deps").open()  -- Opens the dependency picker
 
 ```lua
 -- Example: Ctrl+d to open Flutter dependency picker
-vim.keymap.set('n', '<C-d>', function()
+vim.keymap.set('n', '<space>'pd, function()
   require("flutter-deps").open()
 end, { noremap = true, silent = true, desc = "Open Flutter Dependency Picker" })
 ```
