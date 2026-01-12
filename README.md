@@ -55,37 +55,13 @@ end, { noremap = true, silent = true, desc = "Open Flutter Dependency Picker" })
 
 ## Example Workflow
 
-1. Press your configured key (<C-d> in the example).
+1. Press your configured key (<space>pd in the example).
 
 2. Type the dependency name, e.g., provider.
 
 3. Select the version from the list.
 
 4. The plugin automatically inserts it into pubspec.yaml.
-
-## Configuration
-
-You can optionally pass settings to customize the floating window:
-
-```lua
-require("flutter-deps").setup({
-  width = 0.7,         -- floating window width (0.0-1.0)
-  height = 0.7,        -- floating window height (0.0-1.0)
-  border = "rounded",  -- border style: "single", "double", "rounded", "solid", "shadow"
-  winblend = 0,        -- transparency (0-100)
-})
-```
-
-### Defaults:
-
-```lua
-{
-  width = 0.7,
-  height = 0.7,
-  border = "rounded",
-  winblend = 0,
-}
-```
 
 ## Dependencies
 
