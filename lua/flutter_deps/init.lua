@@ -1,5 +1,6 @@
 local M = {}
 local writer = require('flutter_deps.writer')
+local Job = require('plenary.job')
 
 local config = {
   keymap = '<leader>pd',
@@ -13,8 +14,7 @@ function M.setup(user_config)
   end
 end
 
--- Async fetch package info
-local Job = require('plenary.job')
+-- Cache for package info
 local package_cache = {}
 
 local function fetch_package_info(name, cb)
@@ -86,7 +86,6 @@ function M.add_dependency()
             name = line,
             latest_version = 'loading...',
             all_versions = {},
-            async_info = true,
           }
         end,
       }),
@@ -125,21 +124,54 @@ function M.add_dependency()
               return
             end
 
+            -- show first 15 versions + "Show all..."
+            local limited = {}
+            for i, v in ipairs(info.versions) do
+              if i <= 15 then
+                table.insert(limited, v.pubspec.version)
+              end
+            end
+            table.insert(limited, 'Show all versions...')
+
             pickers
               .new({}, {
                 prompt_title = 'Select version for ' .. entry.name,
-                finder = finders.new_table({
-                  results = vim.tbl_map(function(v)
-                    return v.pubspec.version
-                  end, info.versions),
-                }),
+                finder = finders.new_table({ results = limited }),
                 sorter = conf.generic_sorter({}),
                 attach_mappings = function(bufnr)
                   actions.select_default:replace(function()
                     local ver = action_state.get_selected_entry()
                     actions.close(bufnr)
-                    writer.add_to_pubspec(entry.name, ver.value)
-                    vim.notify('Added ' .. entry.name .. ' ^' .. ver.value, vim.log.levels.INFO)
+
+                    if ver.value == 'Show all versions...' then
+                      -- open full list
+                      pickers
+                        .new({}, {
+                          prompt_title = 'All versions for ' .. entry.name,
+                          finder = finders.new_table({
+                            results = vim.tbl_map(function(v)
+                              return v.pubspec.version
+                            end, info.versions),
+                          }),
+                          sorter = conf.generic_sorter({}),
+                          attach_mappings = function(bufnr2)
+                            actions.select_default:replace(function()
+                              local ver2 = action_state.get_selected_entry()
+                              actions.close(bufnr2)
+                              writer.add_to_pubspec(entry.name, ver2.value)
+                              vim.notify(
+                                'Added ' .. entry.name .. ' ^' .. ver2.value,
+                                vim.log.levels.INFO
+                              )
+                            end)
+                            return true
+                          end,
+                        })
+                        :find()
+                    else
+                      writer.add_to_pubspec(entry.name, ver.value)
+                      vim.notify('Added ' .. entry.name .. ' ^' .. ver.value, vim.log.levels.INFO)
+                    end
                   end)
                   return true
                 end,
