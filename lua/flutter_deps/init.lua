@@ -5,7 +5,7 @@ local config = {
   keymap = '<leader>pd',
 }
 
-local cache = {} -- cache for search results
+local cache = {} -- cache search results
 
 function M.setup(user_config)
   if user_config then
@@ -15,7 +15,7 @@ function M.setup(user_config)
   end
 end
 
--- fetch full package info (only when needed)
+-- fetch full package info only when user selects
 local function fetch_package_info(name, cb)
   vim.fn.jobstart({ 'curl', '-s', 'https://pub.dev/api/packages/' .. name }, {
     stdout_buffered = true,
@@ -31,7 +31,7 @@ local function fetch_package_info(name, cb)
   })
 end
 
--- search pub.dev packages
+-- fetch search results from pub.dev
 local function search_pub_dev(prompt, cb)
   if cache[prompt] then
     cb(cache[prompt])
@@ -43,14 +43,14 @@ local function search_pub_dev(prompt, cb)
     on_stdout = function(_, data)
       local body = table.concat(data, '')
       local ok, json = pcall(vim.fn.json_decode, body)
-      local packages = {}
+      local results = {}
       if ok and json then
         for _, pkg in ipairs(json.packages or {}) do
-          table.insert(packages, pkg.package)
+          table.insert(results, pkg.package)
         end
       end
-      cache[prompt] = packages
-      cb(packages)
+      cache[prompt] = results
+      cb(results)
     end,
   })
 end
@@ -73,17 +73,22 @@ function M.add_dependency()
       prompt_title = 'Search pub.dev packages',
       finder = finders.new_async_job({
         command_generator = function(prompt)
-          if not prompt or #prompt < 2 then
-            return nil
-          end
-          -- we'll handle search in Lua, no shell
+          -- keep this nil, we'll use fn for async search
           return nil
         end,
         fn = function(prompt, cb)
+          if not prompt or #prompt < 2 then
+            cb({})
+            return
+          end
           search_pub_dev(prompt, function(results)
             local entries = {}
             for _, name in ipairs(results) do
-              table.insert(entries, { value = name, display = name, ordinal = name })
+              entries[#entries + 1] = {
+                value = name,
+                display = name,
+                ordinal = name,
+              }
             end
             cb(entries)
           end)
@@ -98,17 +103,15 @@ function M.add_dependency()
           end
           actions.close(prompt_bufnr)
 
-          -- fetch package info only on selection
           fetch_package_info(entry.value, function(info)
-            local latest_version = (info and info.latest and info.latest.pubspec.version) or 'any'
-            writer.add_to_pubspec(entry.value, latest_version)
+            local version = (info and info.latest and info.latest.pubspec.version) or 'any'
+            writer.add_to_pubspec(entry.value, version)
             vim.schedule(function()
-              vim.notify('Added ' .. entry.value .. ' ^' .. latest_version, vim.log.levels.INFO)
+              vim.notify('Added ' .. entry.value .. ' ^' .. version, vim.log.levels.INFO)
             end)
           end)
         end)
 
-        -- optional: version picker on TAB
         map('i', '<Tab>', function()
           local entry = action_state.get_selected_entry()
           if not entry then
