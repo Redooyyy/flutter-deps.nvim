@@ -1,55 +1,29 @@
-local Job = require('plenary.job')
-local M = {}
-
-local cache = {}
-local running_job = nil
-
-function M.search(query, cb)
-  if not cb then
-    return
-  end
-
-  if #query < 2 then
-    cb({})
-    return
-  end
-
-  if cache[query] then
-    cb(cache[query])
-    return
-  end
-
-  if running_job then
-    running_job:shutdown()
-    running_job = nil
-  end
-
-  running_job = Job:new({
-    command = 'curl',
-    args = { '-s', 'https://pub.dev/api/search?q=' .. query },
-    on_exit = function(j)
-      local body = table.concat(j:result(), '\n')
-      local ok, data = pcall(vim.fn.json_decode, body)
-      local results = {}
-
-      if ok and data and data.packages then
-        for _, pkg in ipairs(data.packages) do
-          table.insert(results, {
-            name = pkg.package,
-            latest_version = pkg.version or 'latest',
-          })
+function M.get_package_info(name, cb)
+  Job
+    :new({
+      command = 'curl',
+      args = { '-s', 'https://pub.dev/api/packages/' .. name },
+      on_exit = function(j)
+        local body = table.concat(j:result(), '\n')
+        local ok, data = pcall(vim.fn.json_decode, body)
+        if ok and data then
+          local latest = data.latest and data.latest.pubspec and data.latest.pubspec.version
+            or 'any'
+          local versions = {}
+          if data.versions then
+            for _, v in ipairs(data.versions) do
+              table.insert(versions, v.version)
+            end
+          end
+          vim.schedule(function()
+            cb({ latest = latest, versions = versions })
+          end)
+        else
+          vim.schedule(function()
+            cb(nil)
+          end)
         end
-      end
-
-      cache[query] = results
-
-      vim.schedule(function()
-        cb(results)
-      end)
-    end,
-  })
-
-  running_job:start()
+      end,
+    })
+    :start()
 end
-
-return M
