@@ -33,9 +33,7 @@ function M.search(query, cb)
 
       if ok and data and data.packages then
         for _, pkg in ipairs(data.packages) do
-          table.insert(results, {
-            name = pkg.package,
-          })
+          table.insert(results, { name = pkg.package })
         end
       end
 
