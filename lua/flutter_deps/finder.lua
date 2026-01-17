@@ -8,7 +8,6 @@ function M.search(query, cb)
   if not cb then
     return
   end
-
   if #query < 2 then
     cb({})
     return
@@ -36,13 +35,11 @@ function M.search(query, cb)
         for _, pkg in ipairs(data.packages) do
           table.insert(results, {
             name = pkg.package,
-            latest_version = pkg.version or 'latest',
           })
         end
       end
 
       cache[query] = results
-
       vim.schedule(function()
         cb(results)
       end)
