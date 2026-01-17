@@ -5,6 +5,8 @@ local config = {
   keymap = '<leader>pd',
 }
 
+local cache = {} -- cache for search results
+
 function M.setup(user_config)
   if user_config then
     for k, v in pairs(user_config) do
@@ -13,14 +15,44 @@ function M.setup(user_config)
   end
 end
 
--- Helper: fetch package info from pub.dev
-local function fetch_package_info(name)
-  local body = vim.fn.system('curl -s https://pub.dev/api/packages/' .. name)
-  local ok, data = pcall(vim.fn.json_decode, body)
-  if ok and data then
-    return data
+-- fetch full package info (only when needed)
+local function fetch_package_info(name, cb)
+  vim.fn.jobstart({ 'curl', '-s', 'https://pub.dev/api/packages/' .. name }, {
+    stdout_buffered = true,
+    on_stdout = function(_, data)
+      local body = table.concat(data, '')
+      local ok, json = pcall(vim.fn.json_decode, body)
+      if ok and json then
+        cb(json)
+      else
+        cb(nil)
+      end
+    end,
+  })
+end
+
+-- search pub.dev packages
+local function search_pub_dev(prompt, cb)
+  if cache[prompt] then
+    cb(cache[prompt])
+    return
   end
-  return nil
+
+  vim.fn.jobstart({ 'curl', '-s', 'https://pub.dev/api/search?q=' .. prompt }, {
+    stdout_buffered = true,
+    on_stdout = function(_, data)
+      local body = table.concat(data, '')
+      local ok, json = pcall(vim.fn.json_decode, body)
+      local packages = {}
+      if ok and json then
+        for _, pkg in ipairs(json.packages or {}) do
+          table.insert(packages, pkg.package)
+        end
+      end
+      cache[prompt] = packages
+      cb(packages)
+    end,
+  })
 end
 
 function M.add_dependency()
@@ -44,70 +76,74 @@ function M.add_dependency()
           if not prompt or #prompt < 2 then
             return nil
           end
-          return {
-            'sh',
-            '-c',
-            "curl -s 'https://pub.dev/api/search?q=" .. prompt .. "' | jq -r '.packages[].package'",
-          }
+          -- we'll handle search in Lua, no shell
+          return nil
         end,
-        entry_maker = function(line)
-          local info = fetch_package_info(line)
-          local latest_version = info and info.latest and info.latest.pubspec.version or 'any'
-          return {
-            value = line,
-            display = line,
-            ordinal = line,
-            name = line,
-            latest_version = latest_version,
-            all_versions = info and info.versions or {},
-          }
+        fn = function(prompt, cb)
+          search_pub_dev(prompt, function(results)
+            local entries = {}
+            for _, name in ipairs(results) do
+              table.insert(entries, { value = name, display = name, ordinal = name })
+            end
+            cb(entries)
+          end)
         end,
       }),
       sorter = conf.generic_sorter({}),
       attach_mappings = function(prompt_bufnr, map)
-        -- ENTER → add latest version
         actions.select_default:replace(function()
           local entry = action_state.get_selected_entry()
           if not entry then
             return
           end
           actions.close(prompt_bufnr)
-          writer.add_to_pubspec(entry.name, entry.latest_version)
-          vim.notify('Added ' .. entry.name .. ' ^' .. entry.latest_version, vim.log.levels.INFO)
+
+          -- fetch package info only on selection
+          fetch_package_info(entry.value, function(info)
+            local latest_version = (info and info.latest and info.latest.pubspec.version) or 'any'
+            writer.add_to_pubspec(entry.value, latest_version)
+            vim.schedule(function()
+              vim.notify('Added ' .. entry.value .. ' ^' .. latest_version, vim.log.levels.INFO)
+            end)
+          end)
         end)
 
-        -- TAB → choose version
+        -- optional: version picker on TAB
         map('i', '<Tab>', function()
           local entry = action_state.get_selected_entry()
-          if not entry or not entry.all_versions then
+          if not entry then
             return
           end
           actions.close(prompt_bufnr)
 
-          -- reverse versions so latest comes first
-          local versions = {}
-          for i = #entry.all_versions, 1, -1 do
-            table.insert(versions, entry.all_versions[i].pubspec.version)
-          end
+          fetch_package_info(entry.value, function(info)
+            if not info or not info.versions then
+              return
+            end
+            local versions = {}
+            for i = #info.versions, 1, -1 do
+              table.insert(versions, info.versions[i].pubspec.version)
+            end
 
-          pickers
-            .new({}, {
-              prompt_title = 'Select version for ' .. entry.name,
-              finder = finders.new_table({
-                results = versions,
-              }),
-              sorter = conf.generic_sorter({}),
-              attach_mappings = function(bufnr)
-                actions.select_default:replace(function()
-                  local ver = action_state.get_selected_entry()
-                  actions.close(bufnr)
-                  writer.add_to_pubspec(entry.name, ver.value)
-                  vim.notify('Added ' .. entry.name .. ' ^' .. ver.value, vim.log.levels.INFO)
-                end)
-                return true
-              end,
-            })
-            :find()
+            pickers
+              .new({}, {
+                prompt_title = 'Select version for ' .. entry.value,
+                finder = finders.new_table({ results = versions }),
+                sorter = conf.generic_sorter({}),
+                attach_mappings = function(bufnr)
+                  actions.select_default:replace(function()
+                    local ver = action_state.get_selected_entry()
+                    actions.close(bufnr)
+                    writer.add_to_pubspec(entry.value, ver.value)
+                    vim.schedule(function()
+                      vim.notify('Added ' .. entry.value .. ' ^' .. ver.value, vim.log.levels.INFO)
+                    end)
+                  end)
+                  return true
+                end,
+              })
+              :find()
+          end)
         end)
 
         return true
