@@ -61,7 +61,9 @@ function M.add_dependency()
         fetch_latest(pkg, function(ver)
           table.insert(results, pkg .. ' — ' .. ver)
           pending = pending - 1
+
           if pending == 0 then
+            -- show menu once all versions are fetched
             vim.ui.select(results, { prompt = 'Select package' }, function(choice)
               if choice then
                 local name, version = choice:match('^(.-) — (.+)$')
