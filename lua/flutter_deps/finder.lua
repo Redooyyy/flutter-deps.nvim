@@ -1,8 +1,8 @@
 local Job = require('plenary.job')
 local M = {}
 
--- Cache search results
 local cache = {}
+local running_job = nil
 
 function M.search(query, cb)
   if not cb then
@@ -18,7 +18,12 @@ function M.search(query, cb)
     return
   end
 
-  Job:new({
+  if running_job then
+    running_job:shutdown()
+    running_job = nil
+  end
+
+  running_job = Job:new({
     command = 'curl',
     args = { '-s', 'https://pub.dev/api/search?q=' .. query },
     on_exit = function(j)
@@ -28,7 +33,9 @@ function M.search(query, cb)
 
       if ok and data and data.packages then
         for _, pkg in ipairs(data.packages) do
-          table.insert(results, pkg.package)
+          table.insert(results, {
+            name = pkg.package,
+          })
         end
       end
 
@@ -37,7 +44,9 @@ function M.search(query, cb)
         cb(results)
       end)
     end,
-  }):start()
+  })
+
+  running_job:start()
 end
 
 return M

@@ -1,85 +1,116 @@
 local M = {}
-local Job = require('plenary.job')
 local writer = require('flutter_deps.writer')
 
--- search pub.dev
-local function search_packages(query, cb)
-  Job:new({
-    command = 'curl',
-    args = { '-s', 'https://pub.dev/api/search?q=' .. query },
-    on_exit = function(j)
-      local body = table.concat(j:result(), '\n')
-      local ok, data = pcall(vim.fn.json_decode, body)
-      local results = {}
-      if ok and data and data.packages then
-        for _, pkg in ipairs(data.packages) do
-          table.insert(results, pkg.package)
-        end
-      end
-      vim.schedule(function()
-        cb(results)
-      end)
-    end,
-  }):start()
+local config = {
+  keymap = '<leader>pd',
+}
+
+function M.setup(user_config)
+  if user_config then
+    for k, v in pairs(user_config) do
+      config[k] = v
+    end
+  end
 end
 
--- fetch latest version
-local function fetch_latest(pkg, cb)
-  Job:new({
-    command = 'curl',
-    args = { '-s', 'https://pub.dev/api/packages/' .. pkg },
-    on_exit = function(j)
-      local body = table.concat(j:result(), '\n')
-      local ok, data = pcall(vim.fn.json_decode, body)
-      local ver = 'unknown'
-      if ok and data and data.latest and data.latest.pubspec.version then
-        ver = data.latest.pubspec.version
-      end
-      vim.schedule(function()
-        cb(ver)
-      end)
-    end,
-  }):start()
+-- Helper: fetch package info from pub.dev
+local function fetch_package_info(name)
+  local body = vim.fn.system('curl -s https://pub.dev/api/packages/' .. name)
+  local ok, data = pcall(vim.fn.json_decode, body)
+  if ok and data then
+    return data
+  end
+  return nil
 end
 
 function M.add_dependency()
-  vim.ui.input({ prompt = 'Search pub.dev package:' }, function(query)
-    if not query or #query < 2 then
-      return
-    end
+  local ok = pcall(require, 'telescope')
+  if not ok then
+    vim.notify('flutter-deps.nvim requires telescope.nvim', vim.log.levels.ERROR)
+    return
+  end
 
-    vim.notify("Searching pub.dev for '" .. query .. "' ...")
+  local pickers = require('telescope.pickers')
+  local finders = require('telescope.finders')
+  local conf = require('telescope.config').values
+  local actions = require('telescope.actions')
+  local action_state = require('telescope.actions.state')
 
-    search_packages(query, function(pkgs)
-      if #pkgs == 0 then
-        vim.notify('No results for ' .. query, vim.log.levels.WARN)
-        return
-      end
-
-      local results, pending = {}, #pkgs
-      for _, pkg in ipairs(pkgs) do
-        fetch_latest(pkg, function(ver)
-          table.insert(results, pkg .. ' — ' .. ver)
-          pending = pending - 1
-
-          if pending == 0 then
-            -- show menu once all versions are fetched
-            vim.ui.select(results, { prompt = 'Select package' }, function(choice)
-              if choice then
-                local name, version = choice:match('^(.-) — (.+)$')
-                if name and version and version ~= 'unknown' then
-                  writer.add_to_pubspec(name, version)
-                  vim.notify('Added ' .. name .. ' ^' .. version, vim.log.levels.INFO)
-                else
-                  vim.notify('Version not ready yet for ' .. name, vim.log.levels.WARN)
-                end
-              end
-            end)
+  pickers
+    .new({}, {
+      prompt_title = 'Search pub.dev packages',
+      finder = finders.new_async_job({
+        command_generator = function(prompt)
+          if not prompt or #prompt < 2 then
+            return nil
           end
+          return {
+            'sh',
+            '-c',
+            "curl -s 'https://pub.dev/api/search?q=" .. prompt .. "' | jq -r '.packages[].package'",
+          }
+        end,
+        entry_maker = function(line)
+          local info = fetch_package_info(line)
+          local latest_version = info and info.latest and info.latest.pubspec.version or 'any'
+          return {
+            value = line,
+            display = line,
+            ordinal = line,
+            name = line,
+            latest_version = latest_version,
+            all_versions = info and info.versions or {},
+          }
+        end,
+      }),
+      sorter = conf.generic_sorter({}),
+      attach_mappings = function(prompt_bufnr, map)
+        -- ENTER → add latest version
+        actions.select_default:replace(function()
+          local entry = action_state.get_selected_entry()
+          if not entry then
+            return
+          end
+          actions.close(prompt_bufnr)
+          writer.add_to_pubspec(entry.name, entry.latest_version)
+          vim.notify('Added ' .. entry.name .. ' ^' .. entry.latest_version, vim.log.levels.INFO)
         end)
-      end
-    end)
-  end)
+
+        -- TAB → choose version
+        map('i', '<Tab>', function()
+          local entry = action_state.get_selected_entry()
+          if not entry or not entry.all_versions then
+            return
+          end
+          actions.close(prompt_bufnr)
+
+          pickers
+            .new({}, {
+              prompt_title = 'Select version for ' .. entry.name,
+              finder = finders.new_table({
+                results = vim.tbl_map(function(v)
+                  return v.pubspec.version
+                end, entry.all_versions),
+              }),
+              sorter = conf.generic_sorter({}),
+              attach_mappings = function(bufnr)
+                actions.select_default:replace(function()
+                  local ver = action_state.get_selected_entry()
+                  actions.close(bufnr)
+                  writer.add_to_pubspec(entry.name, ver.value)
+                  vim.notify('Added ' .. entry.name .. ' ^' .. ver.value, vim.log.levels.INFO)
+                end)
+                return true
+              end,
+            })
+            :find()
+        end)
+
+        return true
+      end,
+    })
+    :find()
 end
 
+M.config = config
 return M
