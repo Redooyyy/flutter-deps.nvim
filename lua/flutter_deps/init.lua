@@ -1,28 +1,42 @@
 local M = {}
-local writer = require('flutter_deps.writer')
-local finder = require('flutter_deps.finder')
 local Job = require('plenary.job')
+local writer = require('flutter_deps.writer')
 
-local version_cache = {}
+-- fetch search results
+local function search_packages(query, cb)
+  Job:new({
+    command = 'curl',
+    args = { '-s', 'https://pub.dev/api/search?q=' .. query },
+    on_exit = function(j)
+      local body = table.concat(j:result(), '\n')
+      local ok, data = pcall(vim.fn.json_decode, body)
+      local results = {}
+      if ok and data and data.packages then
+        for _, pkg in ipairs(data.packages) do
+          table.insert(results, pkg.package)
+        end
+      end
+      vim.schedule(function()
+        cb(results)
+      end)
+    end,
+  }):start()
+end
 
-local function fetch_latest_version(pkg, cb)
-  if version_cache[pkg] then
-    cb(version_cache[pkg])
-    return
-  end
+-- fetch latest version
+local function fetch_latest(pkg, cb)
   Job:new({
     command = 'curl',
     args = { '-s', 'https://pub.dev/api/packages/' .. pkg },
     on_exit = function(j)
       local body = table.concat(j:result(), '\n')
       local ok, data = pcall(vim.fn.json_decode, body)
-      local latest = 'unknown'
+      local ver = 'unknown'
       if ok and data and data.latest and data.latest.pubspec.version then
-        latest = data.latest.pubspec.version
+        ver = data.latest.pubspec.version
       end
-      version_cache[pkg] = latest
       vim.schedule(function()
-        cb(latest)
+        cb(ver)
       end)
     end,
   }):start()
@@ -34,33 +48,26 @@ function M.add_dependency()
       return
     end
 
-    -- Stage 1: notify user instead of a stuck menu
     vim.notify("Fetching packages for '" .. query .. "' ...")
 
-    finder.search(query, function(packages)
-      if not packages or #packages == 0 then
+    search_packages(query, function(pkgs)
+      if #pkgs == 0 then
         vim.ui.select({ 'No results' }, { prompt = 'Search pub.dev' }, function(_) end)
         return
       end
 
-      local results = {}
-      local pending = #packages
-
-      for _, pkg in ipairs(packages) do
-        fetch_latest_version(pkg, function(ver)
+      local results, pending = {}, #pkgs
+      for _, pkg in ipairs(pkgs) do
+        fetch_latest(pkg, function(ver)
           table.insert(results, pkg .. ' — ' .. ver)
           pending = pending - 1
-
           if pending == 0 then
-            -- Stage 2: open a fresh menu with real results
             vim.ui.select(results, { prompt = 'Select package' }, function(choice)
               if choice then
                 local name, version = choice:match('^(.-) — (.+)$')
                 if name and version and version ~= 'unknown' then
                   writer.add_to_pubspec(name, version)
                   vim.notify('Added ' .. name .. ' ^' .. version, vim.log.levels.INFO)
-                else
-                  vim.notify('Version not ready yet for ' .. name, vim.log.levels.WARN)
                 end
               end
             end)
