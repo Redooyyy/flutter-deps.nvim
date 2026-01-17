@@ -84,8 +84,6 @@ function M.add_dependency()
             display = line,
             ordinal = line,
             name = line,
-            latest_version = 'loading...',
-            all_versions = {},
           }
         end,
       }),
@@ -98,6 +96,8 @@ function M.add_dependency()
             return
           end
           actions.close(prompt_bufnr)
+
+          vim.notify('Fetching latest version for ' .. entry.name .. '...')
 
           fetch_package_info(entry.name, function(info)
             if info and info.latest and info.latest.pubspec.version then
@@ -117,6 +117,8 @@ function M.add_dependency()
             return
           end
           actions.close(prompt_bufnr)
+
+          vim.notify('Fetching versions for ' .. entry.name .. '...')
 
           fetch_package_info(entry.name, function(info)
             if not info or not info.versions then
