@@ -84,13 +84,17 @@ function M.add_dependency()
           end
           actions.close(prompt_bufnr)
 
+          -- reverse versions so latest comes first
+          local versions = {}
+          for i = #entry.all_versions, 1, -1 do
+            table.insert(versions, entry.all_versions[i].pubspec.version)
+          end
+
           pickers
             .new({}, {
               prompt_title = 'Select version for ' .. entry.name,
               finder = finders.new_table({
-                results = vim.tbl_map(function(v)
-                  return v.pubspec.version
-                end, entry.all_versions),
+                results = versions,
               }),
               sorter = conf.generic_sorter({}),
               attach_mappings = function(bufnr)
