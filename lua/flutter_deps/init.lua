@@ -13,14 +13,42 @@ function M.setup(user_config)
   end
 end
 
--- Helper: fetch package info from pub.dev
-local function fetch_package_info(name)
-  local body = vim.fn.system('curl -s https://pub.dev/api/packages/' .. name)
-  local ok, data = pcall(vim.fn.json_decode, body)
-  if ok and data then
-    return data
+-- Async fetch package info
+local Job = require('plenary.job')
+local package_cache = {}
+
+local function fetch_package_info(name, cb)
+  if package_cache[name] then
+    cb(package_cache[name])
+    return
   end
-  return nil
+
+  Job:new({
+    command = 'curl',
+    args = { '-s', 'https://pub.dev/api/packages/' .. name },
+    on_exit = function(j)
+      local body = table.concat(j:result(), '\n')
+      local ok, data = pcall(vim.fn.json_decode, body)
+      if ok and data then
+        -- reverse versions: latest first
+        if data.versions then
+          local reversed = {}
+          for i = #data.versions, 1, -1 do
+            table.insert(reversed, data.versions[i])
+          end
+          data.versions = reversed
+        end
+        package_cache[name] = data
+        vim.schedule(function()
+          cb(data)
+        end)
+      else
+        vim.schedule(function()
+          cb(nil)
+        end)
+      end
+    end,
+  }):start()
 end
 
 function M.add_dependency()
@@ -51,15 +79,14 @@ function M.add_dependency()
           }
         end,
         entry_maker = function(line)
-          local info = fetch_package_info(line)
-          local latest_version = info and info.latest and info.latest.pubspec.version or 'any'
           return {
             value = line,
             display = line,
             ordinal = line,
             name = line,
-            latest_version = latest_version,
-            all_versions = info and info.versions or {},
+            latest_version = 'loading...',
+            all_versions = {},
+            async_info = true,
           }
         end,
       }),
@@ -72,38 +99,53 @@ function M.add_dependency()
             return
           end
           actions.close(prompt_bufnr)
-          writer.add_to_pubspec(entry.name, entry.latest_version)
-          vim.notify('Added ' .. entry.name .. ' ^' .. entry.latest_version, vim.log.levels.INFO)
+
+          fetch_package_info(entry.name, function(info)
+            if info and info.latest and info.latest.pubspec.version then
+              local latest = info.latest.pubspec.version
+              writer.add_to_pubspec(entry.name, latest)
+              vim.notify('Added ' .. entry.name .. ' ^' .. latest, vim.log.levels.INFO)
+            else
+              vim.notify('Failed to fetch version for ' .. entry.name, vim.log.levels.ERROR)
+            end
+          end)
         end)
 
         -- TAB → choose version
         map('i', '<Tab>', function()
           local entry = action_state.get_selected_entry()
-          if not entry or not entry.all_versions then
+          if not entry then
             return
           end
           actions.close(prompt_bufnr)
 
-          pickers
-            .new({}, {
-              prompt_title = 'Select version for ' .. entry.name,
-              finder = finders.new_table({
-                results = vim.tbl_map(function(v)
-                  return v.pubspec.version
-                end, entry.all_versions),
-              }),
-              sorter = conf.generic_sorter({}),
-              attach_mappings = function(bufnr)
-                actions.select_default:replace(function()
-                  local ver = action_state.get_selected_entry()
-                  actions.close(bufnr)
-                  writer.add_to_pubspec(entry.name, ver.value)
-                  vim.notify('Added ' .. entry.name .. ' ^' .. ver.value, vim.log.levels.INFO)
-                end)
-                return true
-              end,
-            })
-            :find()
+          fetch_package_info(entry.name, function(info)
+            if not info or not info.versions then
+              vim.notify('No versions found for ' .. entry.name, vim.log.levels.ERROR)
+              return
+            end
+
+            pickers
+              .new({}, {
+                prompt_title = 'Select version for ' .. entry.name,
+                finder = finders.new_table({
+                  results = vim.tbl_map(function(v)
+                    return v.pubspec.version
+                  end, info.versions),
+                }),
+                sorter = conf.generic_sorter({}),
+                attach_mappings = function(bufnr)
+                  actions.select_default:replace(function()
+                    local ver = action_state.get_selected_entry()
+                    actions.close(bufnr)
+                    writer.add_to_pubspec(entry.name, ver.value)
+                    vim.notify('Added ' .. entry.name .. ' ^' .. ver.value, vim.log.levels.INFO)
+                  end)
+                  return true
+                end,
+              })
+              :find()
+          end)
         end)
 
         return true
