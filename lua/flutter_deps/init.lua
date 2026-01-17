@@ -2,7 +2,7 @@ local M = {}
 local Job = require('plenary.job')
 local writer = require('flutter_deps.writer')
 
--- fetch search results
+-- search pub.dev
 local function search_packages(query, cb)
   Job:new({
     command = 'curl',
@@ -48,11 +48,11 @@ function M.add_dependency()
       return
     end
 
-    vim.notify("Fetching packages for '" .. query .. "' ...")
+    vim.notify("Searching pub.dev for '" .. query .. "' ...")
 
     search_packages(query, function(pkgs)
       if #pkgs == 0 then
-        vim.ui.select({ 'No results' }, { prompt = 'Search pub.dev' }, function(_) end)
+        vim.notify('No results for ' .. query, vim.log.levels.WARN)
         return
       end
 
@@ -68,6 +68,8 @@ function M.add_dependency()
                 if name and version and version ~= 'unknown' then
                   writer.add_to_pubspec(name, version)
                   vim.notify('Added ' .. name .. ' ^' .. version, vim.log.levels.INFO)
+                else
+                  vim.notify('Version not ready yet for ' .. name, vim.log.levels.WARN)
                 end
               end
             end)
