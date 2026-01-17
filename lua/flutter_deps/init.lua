@@ -110,7 +110,7 @@ function M.add_dependency()
           end)
         end)
 
-        -- TAB → lazy-load versions
+        -- TAB → show versions with loading animation
         map('i', '<Tab>', function()
           local entry = action_state.get_selected_entry()
           if not entry then
@@ -119,6 +119,14 @@ function M.add_dependency()
           actions.close(prompt_bufnr)
 
           vim.notify('Fetching versions for ' .. entry.name .. '...')
+
+          -- temporary "loading..." picker
+          local loading_picker = pickers.new({}, {
+            prompt_title = 'Versions for ' .. entry.name,
+            finder = finders.new_table({ results = { 'loading......' } }),
+            sorter = conf.generic_sorter({}),
+          })
+          loading_picker:find()
 
           fetch_package_info(entry.name, function(info)
             if not info or not info.versions then
@@ -129,51 +137,24 @@ function M.add_dependency()
             local versions = vim.tbl_map(function(v)
               return v.version
             end, info.versions)
-            local chunk_size = 15
-            local current_index = 1
 
-            local function show_picker()
-              local end_index = math.min(current_index + chunk_size - 1, #versions)
-              local chunk = {}
-              for i = current_index, end_index do
-                table.insert(chunk, versions[i])
-              end
-
-              pickers
-                .new({}, {
-                  prompt_title = 'Select version for '
-                    .. entry.name
-                    .. string.format(' (%d/%d)', end_index, #versions),
-                  finder = finders.new_table({ results = chunk }),
-                  sorter = conf.generic_sorter({}),
-                  attach_mappings = function(bufnr, map2)
-                    -- ENTER → add selected version
-                    actions.select_default:replace(function()
-                      local ver = action_state.get_selected_entry()
-                      actions.close(bufnr)
-                      writer.add_to_pubspec(entry.name, ver.value)
-                      vim.notify('Added ' .. entry.name .. ' ^' .. ver.value, vim.log.levels.INFO)
-                    end)
-
-                    -- SPACE → load next chunk
-                    map2('i', '<Space>', function()
-                      actions.close(bufnr)
-                      current_index = end_index + 1
-                      if current_index <= #versions then
-                        show_picker()
-                      else
-                        vim.notify('No more versions to load', vim.log.levels.INFO)
-                      end
-                    end)
-
-                    return true
-                  end,
-                })
-                :find()
-            end
-
-            -- show first chunk
-            show_picker()
+            -- reopen picker with real versions
+            pickers
+              .new({}, {
+                prompt_title = 'Select version for ' .. entry.name,
+                finder = finders.new_table({ results = versions }),
+                sorter = conf.generic_sorter({}),
+                attach_mappings = function(bufnr)
+                  actions.select_default:replace(function()
+                    local ver = action_state.get_selected_entry()
+                    actions.close(bufnr)
+                    writer.add_to_pubspec(entry.name, ver.value)
+                    vim.notify('Added ' .. entry.name .. ' ^' .. ver.value, vim.log.levels.INFO)
+                  end)
+                  return true
+                end,
+              })
+              :find()
           end)
         end)
 
