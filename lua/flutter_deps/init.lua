@@ -3,7 +3,6 @@ local writer = require('flutter_deps.writer')
 local finder = require('flutter_deps.finder')
 local Job = require('plenary.job')
 
--- Cache latest versions
 local version_cache = {}
 
 local function fetch_latest_version(pkg, cb)
@@ -11,7 +10,6 @@ local function fetch_latest_version(pkg, cb)
     cb(version_cache[pkg])
     return
   end
-
   Job:new({
     command = 'curl',
     args = { '-s', 'https://pub.dev/api/packages/' .. pkg },
@@ -36,8 +34,8 @@ function M.add_dependency()
       return
     end
 
-    -- Stage 1: show loading immediately
-    vim.ui.select({ 'loading...' }, { prompt = 'Fetching packages...' }, function(_) end)
+    -- Stage 1: notify user instead of a stuck menu
+    vim.notify("Fetching packages for '" .. query .. "' ...")
 
     finder.search(query, function(packages)
       if not packages or #packages == 0 then
@@ -45,7 +43,6 @@ function M.add_dependency()
         return
       end
 
-      -- Stage 2: fetch latest versions for each package
       local results = {}
       local pending = #packages
 
@@ -55,7 +52,7 @@ function M.add_dependency()
           pending = pending - 1
 
           if pending == 0 then
-            -- All versions fetched, rebuild menu
+            -- Stage 2: open a fresh menu with real results
             vim.ui.select(results, { prompt = 'Select package' }, function(choice)
               if choice then
                 local name, version = choice:match('^(.-) — (.+)$')
