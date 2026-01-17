@@ -36,7 +36,7 @@ function M.add_dependency()
       return
     end
 
-    -- show loading immediately
+    -- Stage 1: show loading immediately
     vim.ui.select({ 'loading...' }, { prompt = 'Fetching packages...' }, function(_) end)
 
     finder.search(query, function(packages)
@@ -45,35 +45,29 @@ function M.add_dependency()
         return
       end
 
-      local display = {}
-      local pkg_map = {}
+      -- Stage 2: fetch latest versions for each package
+      local results = {}
+      local pending = #packages
 
       for _, pkg in ipairs(packages) do
-        local line = pkg .. ' — loading...'
-        table.insert(display, line)
-        pkg_map[line] = pkg
-
-        -- async fetch latest version for each package
         fetch_latest_version(pkg, function(ver)
-          local updated = pkg .. ' — ' .. ver
-          -- rebuild menu with updated entries
-          local new_display = {}
-          for _, p in ipairs(packages) do
-            local v = version_cache[p] or 'loading...'
-            table.insert(new_display, p .. ' — ' .. v)
-            pkg_map[p .. ' — ' .. v] = p
-          end
-          vim.ui.select(new_display, { prompt = 'Select package' }, function(choice)
-            if choice then
-              local name, ver = choice:match('^(.-) — (.+)$')
-              if name and ver and ver ~= 'loading...' and ver ~= 'unknown' then
-                writer.add_to_pubspec(name, ver)
-                vim.notify('Added ' .. name .. ' ^' .. ver, vim.log.levels.INFO)
-              else
-                vim.notify('Version not ready yet for ' .. name, vim.log.levels.WARN)
+          table.insert(results, pkg .. ' — ' .. ver)
+          pending = pending - 1
+
+          if pending == 0 then
+            -- All versions fetched, rebuild menu
+            vim.ui.select(results, { prompt = 'Select package' }, function(choice)
+              if choice then
+                local name, version = choice:match('^(.-) — (.+)$')
+                if name and version and version ~= 'unknown' then
+                  writer.add_to_pubspec(name, version)
+                  vim.notify('Added ' .. name .. ' ^' .. version, vim.log.levels.INFO)
+                else
+                  vim.notify('Version not ready yet for ' .. name, vim.log.levels.WARN)
+                end
               end
-            end
-          end)
+            end)
+          end
         end)
       end
     end)
