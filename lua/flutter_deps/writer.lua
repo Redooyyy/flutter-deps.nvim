@@ -26,7 +26,6 @@ function M.add_to_pubspec(name, version)
   end
 
   vim.fn.writefile(lines, path)
-
   vim.fn.jobstart({ 'flutter', 'pub', 'get' }, { detach = true })
 end
 
