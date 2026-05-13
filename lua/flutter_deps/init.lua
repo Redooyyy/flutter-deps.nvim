@@ -13,12 +13,12 @@ function M.setup(user_config)
   end
 end
 
--- Fetch package info lazily (only called on selection, not during search)
-local pkg_info_cache = {}
+-- Cache for full version list (only fetched on TAB)
+local versions_cache = {}
 
-local function fetch_package_info_async(name, cb)
-  if pkg_info_cache[name] then
-    cb(pkg_info_cache[name])
+local function fetch_versions_async(name, cb)
+  if versions_cache[name] then
+    cb(versions_cache[name])
     return
   end
 
@@ -29,10 +29,20 @@ local function fetch_package_info_async(name, cb)
     on_exit = function(j)
       local body = table.concat(j:result(), '\n')
       local ok, data = pcall(vim.fn.json_decode, body)
-      local result = (ok and data) and data or nil
-      pkg_info_cache[name] = result
+      local versions = {}
+
+      if ok and data and data.versions then
+        for i = #data.versions, 1, -1 do
+          local v = data.versions[i].version
+          if v then
+            table.insert(versions, v)
+          end
+        end
+      end
+
+      versions_cache[name] = versions
       vim.schedule(function()
-        cb(result)
+        cb(versions)
       end)
     end,
   }):start()
@@ -55,6 +65,9 @@ function M.add_dependency()
     .new({}, {
       prompt_title = 'Search pub.dev packages',
       finder = finders.new_async_job({
+        -- Fetch JSON directly and emit one compact object per line.
+        -- This gives entry_maker the name AND latest.version in one shot,
+        -- so Enter never needs a second API call.
         command_generator = function(prompt)
           if not prompt or #prompt < 2 then
             return nil
@@ -62,25 +75,35 @@ function M.add_dependency()
           return {
             'sh',
             '-c',
-            "curl -s 'https://pub.dev/api/search?q=" .. prompt .. "' | jq -r '.packages[].package'",
+            "curl -s 'https://pub.dev/api/search?q="
+              .. prompt
+              .. "' | jq -c '.packages[] | {name: .package, version: .latest.version}'",
           }
         end,
-        -- entry_maker is now instant: no network calls, just pass the name through
         entry_maker = function(line)
           if not line or line == '' then
             return nil
           end
+          local ok, obj = pcall(vim.fn.json_decode, line)
+          if not ok or not obj or not obj.name then
+            return nil
+          end
+
+          local version = obj.version or 'unknown'
+          local display = obj.name .. '  ' .. version
+
           return {
-            value = line,
-            display = line,
-            ordinal = line,
-            name = line,
+            value = obj.name,
+            display = display,
+            ordinal = obj.name,
+            name = obj.name,
+            latest_version = version,
           }
         end,
       }),
       sorter = conf.generic_sorter({}),
       attach_mappings = function(prompt_bufnr, map)
-        -- ENTER → fetch info async, then add latest version
+        -- ENTER → latest_version is already in the entry, no extra API call needed
         actions.select_default:replace(function()
           local entry = action_state.get_selected_entry()
           if not entry then
@@ -88,19 +111,17 @@ function M.add_dependency()
           end
           actions.close(prompt_bufnr)
 
-          vim.notify('Fetching info for ' .. entry.name .. '...', vim.log.levels.INFO)
-          fetch_package_info_async(entry.name, function(info)
-            local latest = info and info.latest and info.latest.version or nil
-            if not latest then
-              vim.notify('Could not fetch latest version for ' .. entry.name, vim.log.levels.WARN)
-              return
-            end
-            writer.add_to_pubspec(entry.name, latest)
-            vim.notify('Added ' .. entry.name .. ' ^' .. latest, vim.log.levels.INFO)
-          end)
+          local version = entry.latest_version
+          if not version or version == 'unknown' then
+            vim.notify('Could not determine latest version for ' .. entry.name, vim.log.levels.WARN)
+            return
+          end
+
+          writer.add_to_pubspec(entry.name, version)
+          vim.notify('Added ' .. entry.name .. ' ^' .. version, vim.log.levels.INFO)
         end)
 
-        -- TAB → fetch info async, then open version picker
+        -- TAB → fetch full version list async, then open version picker
         map('i', '<Tab>', function()
           local entry = action_state.get_selected_entry()
           if not entry then
@@ -109,18 +130,7 @@ function M.add_dependency()
           actions.close(prompt_bufnr)
 
           vim.notify('Fetching versions for ' .. entry.name .. '...', vim.log.levels.INFO)
-          fetch_package_info_async(entry.name, function(info)
-            local all_versions = info and info.versions or {}
-
-            -- reverse so latest comes first
-            local versions = {}
-            for i = #all_versions, 1, -1 do
-              local v = all_versions[i].version
-              if v then
-                table.insert(versions, v)
-              end
-            end
-
+          fetch_versions_async(entry.name, function(versions)
             if #versions == 0 then
               vim.notify('No versions found for ' .. entry.name, vim.log.levels.WARN)
               return
