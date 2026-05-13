@@ -90,7 +90,11 @@ function M.add_dependency()
 
           vim.notify('Fetching info for ' .. entry.name .. '...', vim.log.levels.INFO)
           fetch_package_info_async(entry.name, function(info)
-            local latest = info and info.latest and info.latest.pubspec.version or 'any'
+            local latest = info and info.latest and info.latest.version or nil
+            if not latest then
+              vim.notify('Could not fetch latest version for ' .. entry.name, vim.log.levels.WARN)
+              return
+            end
             writer.add_to_pubspec(entry.name, latest)
             vim.notify('Added ' .. entry.name .. ' ^' .. latest, vim.log.levels.INFO)
           end)
@@ -111,7 +115,10 @@ function M.add_dependency()
             -- reverse so latest comes first
             local versions = {}
             for i = #all_versions, 1, -1 do
-              table.insert(versions, all_versions[i].pubspec.version)
+              local v = all_versions[i].version
+              if v then
+                table.insert(versions, v)
+              end
             end
 
             if #versions == 0 then
