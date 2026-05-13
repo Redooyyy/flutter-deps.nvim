@@ -16,41 +16,64 @@ end
 -- Cache: name -> { latest: string, versions: []string }
 local pkg_cache = {}
 
-local function fetch_package_async(name, cb)
-  if pkg_cache[name] then
-    cb(pkg_cache[name])
+local function fetch_latest_async(name, cb)
+  if pkg_cache[name] and pkg_cache[name].latest then
+    cb(pkg_cache[name].latest)
     return
   end
 
   local Job = require('plenary.job')
   Job:new({
-    command = 'curl',
-    args = { '-s', 'https://pub.dev/api/packages/' .. name },
+    command = 'sh',
+    args = {
+      '-c',
+      "curl -s 'https://pub.dev/api/packages/" .. name .. "' | jq -r '.latest.version'",
+    },
     on_exit = function(j)
-      local body = table.concat(j:result(), '\n')
-      local ok, data = pcall(vim.fn.json_decode, body)
+      local version = vim.trim(table.concat(j:result(), ''))
+      if version == '' or version == 'null' then
+        version = nil
+      end
+      if not pkg_cache[name] then
+        pkg_cache[name] = {}
+      end
+      pkg_cache[name].latest = version
+      vim.schedule(function()
+        cb(version)
+      end)
+    end,
+  }):start()
+end
 
-      local result = { latest = nil, versions = {} }
+local function fetch_versions_async(name, cb)
+  if pkg_cache[name] and pkg_cache[name].versions then
+    cb(pkg_cache[name].versions)
+    return
+  end
 
-      if ok and data then
-        -- Detail API: latest version is at data.latest.version
-        if data.latest and data.latest.version then
-          result.latest = data.latest.version
-        end
-        -- All versions: each item has a top-level .version field
-        if data.versions then
-          for i = #data.versions, 1, -1 do
-            local v = data.versions[i].version
-            if v then
-              table.insert(result.versions, v)
-            end
-          end
+  local Job = require('plenary.job')
+  Job:new({
+    command = 'sh',
+    args = {
+      '-c',
+      "curl -s 'https://pub.dev/api/packages/"
+        .. name
+        .. "' | jq -r '[.versions[].version] | reverse[]'",
+    },
+    on_exit = function(j)
+      local versions = {}
+      for _, line in ipairs(j:result()) do
+        local v = vim.trim(line)
+        if v ~= '' and v ~= 'null' then
+          table.insert(versions, v)
         end
       end
-
-      pkg_cache[name] = result
+      if not pkg_cache[name] then
+        pkg_cache[name] = {}
+      end
+      pkg_cache[name].versions = versions
       vim.schedule(function()
-        cb(result)
+        cb(versions)
       end)
     end,
   }):start()
@@ -97,7 +120,7 @@ function M.add_dependency()
       }),
       sorter = conf.generic_sorter({}),
       attach_mappings = function(prompt_bufnr, map)
-        -- ENTER → fetch detail API, add latest version
+        -- ENTER → fetch latest version via jq, add to pubspec
         actions.select_default:replace(function()
           local entry = action_state.get_selected_entry()
           if not entry then
@@ -106,17 +129,17 @@ function M.add_dependency()
           actions.close(prompt_bufnr)
 
           vim.notify('Fetching ' .. entry.name .. '...', vim.log.levels.INFO)
-          fetch_package_async(entry.name, function(pkg)
-            if not pkg.latest then
+          fetch_latest_async(entry.name, function(version)
+            if not version then
               vim.notify('Could not fetch version for ' .. entry.name, vim.log.levels.WARN)
               return
             end
-            writer.add_to_pubspec(entry.name, pkg.latest)
-            vim.notify('Added ' .. entry.name .. ' ^' .. pkg.latest, vim.log.levels.INFO)
+            writer.add_to_pubspec(entry.name, version)
+            vim.notify('Added ' .. entry.name .. ' ^' .. version, vim.log.levels.INFO)
           end)
         end)
 
-        -- TAB → fetch detail API, open version picker
+        -- TAB → fetch all versions via jq, open version picker
         map('i', '<Tab>', function()
           local entry = action_state.get_selected_entry()
           if not entry then
@@ -125,8 +148,8 @@ function M.add_dependency()
           actions.close(prompt_bufnr)
 
           vim.notify('Fetching versions for ' .. entry.name .. '...', vim.log.levels.INFO)
-          fetch_package_async(entry.name, function(pkg)
-            if #pkg.versions == 0 then
+          fetch_versions_async(entry.name, function(versions)
+            if #versions == 0 then
               vim.notify('No versions found for ' .. entry.name, vim.log.levels.WARN)
               return
             end
@@ -134,7 +157,7 @@ function M.add_dependency()
             pickers
               .new({}, {
                 prompt_title = 'Select version for ' .. entry.name,
-                finder = finders.new_table({ results = pkg.versions }),
+                finder = finders.new_table({ results = versions }),
                 sorter = conf.generic_sorter({}),
                 attach_mappings = function(bufnr)
                   actions.select_default:replace(function()
