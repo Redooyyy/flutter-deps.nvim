@@ -13,8 +13,31 @@ function M.setup(user_config)
   end
 end
 
--- Cache for full version list (only fetched on TAB)
+-- Stores latest version keyed by package name, populated from search results
+local latest_version_cache = {}
+-- Stores full version list keyed by package name, populated on TAB
 local versions_cache = {}
+
+-- Fires off a background job to fetch search JSON and cache latest versions.
+-- This runs in parallel with the async job that streams names to telescope.
+local function prefetch_latest_versions(prompt)
+  local Job = require('plenary.job')
+  Job:new({
+    command = 'curl',
+    args = { '-s', 'https://pub.dev/api/search?q=' .. prompt },
+    on_exit = function(j)
+      local body = table.concat(j:result(), '\n')
+      local ok, data = pcall(vim.fn.json_decode, body)
+      if ok and data and data.packages then
+        for _, pkg in ipairs(data.packages) do
+          if pkg.package and pkg.latest and pkg.latest.version then
+            latest_version_cache[pkg.package] = pkg.latest.version
+          end
+        end
+      end
+    end,
+  }):start()
+end
 
 local function fetch_versions_async(name, cb)
   if versions_cache[name] then
@@ -65,45 +88,35 @@ function M.add_dependency()
     .new({}, {
       prompt_title = 'Search pub.dev packages',
       finder = finders.new_async_job({
-        -- Fetch JSON directly and emit one compact object per line.
-        -- This gives entry_maker the name AND latest.version in one shot,
-        -- so Enter never needs a second API call.
+        -- Streams plain package names to telescope (fast, works with async job)
+        -- A parallel job also fetches the search JSON to cache latest versions
         command_generator = function(prompt)
           if not prompt or #prompt < 2 then
             return nil
           end
+          -- Fire a parallel job to cache latest versions from the same query
+          prefetch_latest_versions(prompt)
           return {
             'sh',
             '-c',
-            "curl -s 'https://pub.dev/api/search?q="
-              .. prompt
-              .. "' | jq -c '.packages[] | {name: .package, version: .latest.version}'",
+            "curl -s 'https://pub.dev/api/search?q=" .. prompt .. "' | jq -r '.packages[].package'",
           }
         end,
         entry_maker = function(line)
           if not line or line == '' then
             return nil
           end
-          local ok, obj = pcall(vim.fn.json_decode, line)
-          if not ok or not obj or not obj.name then
-            return nil
-          end
-
-          local version = obj.version or 'unknown'
-          local display = obj.name .. '  ' .. version
-
           return {
-            value = obj.name,
-            display = display,
-            ordinal = obj.name,
-            name = obj.name,
-            latest_version = version,
+            value = line,
+            display = line,
+            ordinal = line,
+            name = line,
           }
         end,
       }),
       sorter = conf.generic_sorter({}),
       attach_mappings = function(prompt_bufnr, map)
-        -- ENTER → latest_version is already in the entry, no extra API call needed
+        -- ENTER → use cached latest version (from prefetch), instant
         actions.select_default:replace(function()
           local entry = action_state.get_selected_entry()
           if not entry then
@@ -111,8 +124,8 @@ function M.add_dependency()
           end
           actions.close(prompt_bufnr)
 
-          local version = entry.latest_version
-          if not version or version == 'unknown' then
+          local version = latest_version_cache[entry.name]
+          if not version then
             vim.notify('Could not determine latest version for ' .. entry.name, vim.log.levels.WARN)
             return
           end
@@ -121,7 +134,7 @@ function M.add_dependency()
           vim.notify('Added ' .. entry.name .. ' ^' .. version, vim.log.levels.INFO)
         end)
 
-        -- TAB → fetch full version list async, then open version picker
+        -- TAB → fetch full version list, then open version picker
         map('i', '<Tab>', function()
           local entry = action_state.get_selected_entry()
           if not entry then
