@@ -14,6 +14,12 @@ No more alt-tabbing to a browser, copying version strings, and manually editing 
 
 Type `firebase_auth` → results appear instantly → press `Enter` to add the latest version, or `Tab` to pick a specific version.
 
+### Default Latest version
+[Watch](assets/deff.mp4)
+
+### Select specific version
+[Watch](assets/versions.mp4)
+
 ---
 
 ## Features
