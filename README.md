@@ -1,3 +1,5 @@
+
+
 # flutter-deps.nvim
 
 A Neovim plugin to **search and add Flutter/Dart dependencies** from [pub.dev](https://pub.dev) directly into your `pubspec.yaml` — without leaving your editor.
@@ -15,10 +17,13 @@ No more alt-tabbing to a browser, copying version strings, and manually editing 
 Type `firebase_auth` → results appear instantly → press `Enter` to add the latest version, or `Tab` to pick a specific version.
 
 ### Default Latest version
-[Watch](assets/deff.mp4)
+
+https://github.com/user-attachments/assets/f577f654-d728-4aae-b94f-2f9627e3a890
+
 
 ### Select specific version
-[Watch](assets/versions.mp4)
+
+https://github.com/user-attachments/assets/7a99a525-4dbf-47a0-868c-599e84656cdc
 
 ---
 
